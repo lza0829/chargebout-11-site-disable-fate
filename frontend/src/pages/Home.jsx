@@ -25,12 +25,20 @@ export default function Home() {
     ['已中断', o.已中断],
     ['在充电量', o.在充电量],
     ['本日关账金额', o.本日关账金额],
+    ['禁新开站点', o.禁新开站点],
+    ['下线站在充', o.下线站在充],
   ]
   return (
     <div className="page">
       <h2>总览</h2>
       <p className="lead">
         营业日 {o.营业日} · 充日{o.充日已封印 ? '已封印' : '未封印'}
+        {o.禁新开站点 > 0 && (
+          <>
+            {' · '}<span className="tag 禁新开">禁新开</span> {o.禁新开站点名.join('、')}
+            （在充 {o.下线站在充} 笔待收口）
+          </>
+        )}
       </p>
       <div className="grid">
         {items.map(([k, v]) => (

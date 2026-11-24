@@ -30,6 +30,7 @@ export default function Sessions() {
                 <td>{s.slip_no}</td>
                 <td>
                   {s.site_name} · {s.pile_name} · {s.gun_name}
+                  {s.site_active === 0 && <span className="tag 禁新开">站已下线</span>}
                 </td>
                 <td>
                   <span className={`tag ${s.status}`}>{s.status}</span>

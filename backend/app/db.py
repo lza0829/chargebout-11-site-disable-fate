@@ -1,7 +1,7 @@
 from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
-from app.config import DB_PATH
+from app import config
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sites (
@@ -85,20 +85,37 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS site_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  open_sessions INTEGER NOT NULL DEFAULT 0,
+  open_slips TEXT NOT NULL DEFAULT '[]',
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE(site_id, seq),
+  FOREIGN KEY(site_id) REFERENCES sites(id)
+);
 """
 
 
-def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+def connect(timeout: float = 5.0) -> sqlite3.Connection:
+    conn = sqlite3.connect(config.DB_PATH, check_same_thread=False, timeout=timeout)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
 @contextmanager
-def db():
+def db(immediate: bool = False):
+    """immediate=True 时以 BEGIN IMMEDIATE 开启事务：进入即取写锁，
+    闸判定与后续写入同事务串行，杜绝"检查通过后被下线挤入"的半截写。"""
     conn = connect()
     try:
+        if immediate:
+            conn.isolation_level = None
+            conn.execute("BEGIN IMMEDIATE")
         yield conn
         conn.commit()
     except Exception:

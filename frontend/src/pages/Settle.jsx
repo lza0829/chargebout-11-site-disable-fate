@@ -42,7 +42,8 @@ export default function Settle() {
               <tr key={s.id}>
                 <td>{s.slip_no}</td>
                 <td>
-                  {s.site_name} · {s.pile_name}
+                  {s.site_name}
+                  {s.site_active === 0 && <span className="tag 禁新开">站已下线</span>} · {s.pile_name}
                 </td>
                 <td>
                   <span className={`tag ${s.status}`}>{s.status}</span>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 from fastapi import HTTPException
 
+from app.services import sites as site_svc
 from app.services.core import current_band_price, get_setting, is_day_sealed, now_str, today
 
 
@@ -21,9 +22,9 @@ def open_session(conn, pile_id: int, gun_id: int | None = None) -> dict:
         raise HTTPException(404, detail="桩位不存在")
     if pile["status"] != "空闲":
         raise HTTPException(400, detail=f"桩位当前为{pile['status']}，不可开充")
-    site = conn.execute("SELECT * FROM sites WHERE id=?", (pile["site_id"],)).fetchone()
-    if not site or not site["active"]:
-        raise HTTPException(400, detail="站点未启用")
+    # 开充闸（臂A口径）：站点已下线则禁新开；判定须在写事务内，与下线串行
+    if not site_svc.gate_open(conn, pile["site_id"]):
+        raise HTTPException(400, detail="站点已下线，禁止新开充；在充会话仍可记脉冲与关账")
 
     if gun_id is None:
         gun = conn.execute(
@@ -42,6 +43,8 @@ def open_session(conn, pile_id: int, gun_id: int | None = None) -> dict:
     price = current_band_price(conn, pile["rate_plan_id"])
     slip = _next_slip(conn)
     ts = now_str()
+    # 锚定开充时的闸序：事后可由下线事件重放到该闸序，验证此次开充确在闸开时放行
+    seq = site_svc.gate_seq(conn, pile["site_id"])
     cur = conn.execute(
         """INSERT INTO sessions(slip_no,site_id,pile_id,gun_id,rate_plan_id,business_day,status,kwh,amount,price_locked,started_at,note)
            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -65,7 +68,7 @@ def open_session(conn, pile_id: int, gun_id: int | None = None) -> dict:
     conn.execute("UPDATE guns SET status='占用' WHERE id=?", (gun["id"],))
     conn.execute(
         "INSERT INTO session_events(session_id,action,created_at,note) VALUES(?,?,?,?)",
-        (sid, "开会话", ts, f"锁定电价{price}"),
+        (sid, "开会话", ts, f"锁定电价{price}·闸序{seq}"),
     )
     return {"会话号": slip, "会话编号": sid, "锁定电价": price, "状态": "充电中"}
 

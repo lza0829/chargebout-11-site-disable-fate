@@ -54,6 +54,15 @@ def overview(conn) -> dict:
         "SELECT COALESCE(SUM(amount),0) AS a FROM sessions WHERE business_day=? AND status='已关账'",
         (today(),),
     ).fetchone()["a"]
+    # 臂A口径：总览须能看出哪些站已禁新开，以及这些站还剩多少在充待收口
+    offline_sites = rows(
+        conn.execute("SELECT id, name FROM sites WHERE active=0 ORDER BY id").fetchall()
+    )
+    offline_unclosed = conn.execute(
+        """SELECT COUNT(*) AS n FROM sessions
+           WHERE status IN ('充电中','结算中','已超时')
+             AND site_id IN (SELECT id FROM sites WHERE active=0)"""
+    ).fetchone()["n"]
     return {
         "桩位空闲": pile_map.get("空闲", 0),
         "桩位占用": pile_map.get("占用", 0),
@@ -66,19 +75,34 @@ def overview(conn) -> dict:
         "已中断": sess_map.get("已中断", 0),
         "在充电量": round(float(open_kwh), 3),
         "本日关账金额": round(float(today_amount), 2),
+        "禁新开站点": len(offline_sites),
+        "禁新开站点名": [s["name"] for s in offline_sites],
+        "下线站在充": offline_unclosed,
         "营业日": today(),
         "充日已封印": is_day_sealed(conn),
     }
 
 
 def list_sites(conn):
-    return rows(conn.execute("SELECT * FROM sites ORDER BY id").fetchall())
+    rs = conn.execute(
+        """SELECT s.*,
+             (SELECT COUNT(*) FROM sessions se
+               WHERE se.site_id=s.id AND se.status IN ('充电中','结算中','已超时')) AS open_sessions,
+             (SELECT MAX(created_at) FROM site_events ev WHERE ev.site_id=s.id) AS last_event_at
+           FROM sites s ORDER BY s.id"""
+    ).fetchall()
+    out = []
+    for r in rs:
+        d = row_dict(r)
+        d["gate"] = "开充中" if d["active"] else "禁新开"
+        out.append(d)
+    return out
 
 
 def list_piles(conn, site_id: int | None = None):
     if site_id:
         rs = conn.execute(
-            """SELECT p.*, s.name AS site_name, r.name AS rate_name
+            """SELECT p.*, s.name AS site_name, s.active AS site_active, r.name AS rate_name
                FROM piles p JOIN sites s ON s.id=p.site_id
                JOIN rate_plans r ON r.id=p.rate_plan_id
                WHERE p.site_id=? ORDER BY p.id""",
@@ -86,7 +110,7 @@ def list_piles(conn, site_id: int | None = None):
         ).fetchall()
     else:
         rs = conn.execute(
-            """SELECT p.*, s.name AS site_name, r.name AS rate_name
+            """SELECT p.*, s.name AS site_name, s.active AS site_active, r.name AS rate_name
                FROM piles p JOIN sites s ON s.id=p.site_id
                JOIN rate_plans r ON r.id=p.rate_plan_id
                ORDER BY p.id"""
@@ -116,7 +140,7 @@ def list_rates(conn):
 def list_sessions(conn, status: str | None = None):
     if status:
         rs = conn.execute(
-            """SELECT se.*, p.name AS pile_name, g.name AS gun_name, s.name AS site_name
+            """SELECT se.*, p.name AS pile_name, g.name AS gun_name, s.name AS site_name, s.active AS site_active
                FROM sessions se
                JOIN piles p ON p.id=se.pile_id
                JOIN guns g ON g.id=se.gun_id
@@ -126,7 +150,7 @@ def list_sessions(conn, status: str | None = None):
         ).fetchall()
     else:
         rs = conn.execute(
-            """SELECT se.*, p.name AS pile_name, g.name AS gun_name, s.name AS site_name
+            """SELECT se.*, p.name AS pile_name, g.name AS gun_name, s.name AS site_name, s.active AS site_active
                FROM sessions se
                JOIN piles p ON p.id=se.pile_id
                JOIN guns g ON g.id=se.gun_id

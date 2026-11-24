@@ -35,7 +35,8 @@ export default function Pulses() {
           <select value={id} onChange={(e) => setId(e.target.value)}>
             {list.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.slip_no} · {s.pile_name} · 已充 {s.kwh}
+                {s.slip_no} · {s.pile_name}
+                {s.site_active === 0 ? '（站已下线·仍可收口）' : ''} · 已充 {s.kwh}
               </option>
             ))}
           </select>

@@ -10,7 +10,7 @@ export default function OpenSession() {
   useEffect(() => {
     api.桩位().then((list) => {
       setPiles(list)
-      const idle = list.find((p) => p.status === '空闲')
+      const idle = list.find((p) => p.status === '空闲' && p.site_active !== 0)
       if (idle) setPileId(String(idle.id))
     })
   }, [])
@@ -45,7 +45,8 @@ export default function OpenSession() {
           <select value={pileId} onChange={(e) => setPileId(e.target.value)}>
             {piles.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.site_name} · {p.name} · {p.status}
+                {p.site_name}
+                {p.site_active === 0 ? '（站已下线·禁新开）' : ''} · {p.name} · {p.status}
               </option>
             ))}
           </select>

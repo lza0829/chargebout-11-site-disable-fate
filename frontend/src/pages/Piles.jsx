@@ -36,7 +36,10 @@ export default function Piles() {
           <tbody>
             {list.map((p) => (
               <tr key={p.id}>
-                <td>{p.site_name}</td>
+                <td>
+                  {p.site_name}
+                  {p.site_active === 0 && <span className="tag 禁新开">禁新开</span>}
+                </td>
                 <td>{p.name}</td>
                 <td>{p.rated_kw}</td>
                 <td>{p.rate_name}</td>

@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from app.db import db
 from app.services import core
+from app.services import sites as svc
 
 router = APIRouter()
 
@@ -13,6 +14,10 @@ class SiteIn(BaseModel):
     启用: bool = True
 
 
+class NoteIn(BaseModel):
+    备注: str = ""
+
+
 @router.get("/站点")
 def list_sites():
     with db() as conn:
@@ -21,7 +26,7 @@ def list_sites():
 
 @router.post("/站点")
 def create_site(body: SiteIn):
-    with db() as conn:
+    with db(immediate=True) as conn:
         try:
             cur = conn.execute(
                 "INSERT INTO sites(name,address,active) VALUES(?,?,?)",
@@ -29,18 +34,32 @@ def create_site(body: SiteIn):
             )
         except Exception as e:
             raise HTTPException(400, detail=f"无法新建站点：{e}") from e
-        return {"编号": cur.lastrowid, "名称": body.名称}
+        sid = cur.lastrowid
+        if not body.启用:
+            # 建站即下线：补一条下线事件，保证闸态始终可由事件流重放
+            svc.append_event(conn, sid, "下线", "建站即下线")
+        return {"编号": sid, "名称": body.名称}
 
 
-@router.post("/站点/{site_id}/启用")
-def enable_site(site_id: int):
+@router.post("/站点/{site_id}/下线")
+def offline_site(site_id: int, body: NoteIn | None = None):
+    with db(immediate=True) as conn:
+        return svc.offline_site(conn, site_id, body.备注 if body else "")
+
+
+@router.post("/站点/{site_id}/上线")
+def online_site(site_id: int, body: NoteIn | None = None):
+    with db(immediate=True) as conn:
+        return svc.online_site(conn, site_id, body.备注 if body else "")
+
+
+@router.get("/站点/{site_id}/事件")
+def site_events(site_id: int):
     with db() as conn:
-        conn.execute("UPDATE sites SET active=1 WHERE id=?", (site_id,))
-        return {"编号": site_id, "启用": True}
+        return svc.list_site_events(conn, site_id)
 
 
-@router.post("/站点/{site_id}/停用")
-def disable_site(site_id: int):
+@router.get("/站点/{site_id}/闸")
+def site_gate(site_id: int):
     with db() as conn:
-        conn.execute("UPDATE sites SET active=0 WHERE id=?", (site_id,))
-        return {"编号": site_id, "启用": False}
+        return svc.gate_status(conn, site_id)
